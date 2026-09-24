@@ -1,56 +1,274 @@
 # TikTok OAuth Redirect Page
 
-This repository contains a **public-safe HTML page** for handling TikTok OAuth authorization. It is designed to:
+This repository contains a **public-safe HTML page** for handling both TikTok Business OAuth and TikTok Shop OAuth using the same redirect URL.
 
-- Capture the `auth_code` and `state` parameters from TikTok after user authorization.
-- Forward the `auth_code` securely to a **Power Automate flow**.
-- Allow automated access token exchange for TikTok Ads and Campaign Insights.
-- Be safe to host publicly (e.g., GitHub Pages) without exposing secrets.
+The page detects which authorization flow was used and sends a simple payload to the same **Power Automate flow**.
+
+---
+
+## Supported TikTok OAuth Flows
+
+### TikTok Business / Ads
+
+Example callback:
+
+```text
+https://awi-systems.github.io/tiktok-oauth-redirect/tiktok_redirect.html?auth_code=example&code=example&state=example
+```
+
+The redirect page identifies this as:
+
+```text
+type = business
+```
+
+### TikTok Shop
+
+Example callback:
+
+```text
+https://awi-systems.github.io/tiktok-oauth-redirect/tiktok_redirect.html?app_key=6la75j8ggs28c&code=example&locale=en&shop_region=PH&state=example
+```
+
+The redirect page identifies this as:
+
+```text
+type = shop
+```
+
+The detection is based on the presence of the `app_key` parameter in the TikTok Shop callback.
 
 ---
 
 ## Features
 
-- **Public-Safe**: No secrets or app credentials are included in the HTML.
-- **State Verification**: Captures the `state` parameter sent in the authorization URL.
-- **Power Automate Integration**: Sends `auth_code` and `state` to your flow for further processing.
-- **Fully Automated**: Once the user clicks the TikTok auth link, the process continues without manual intervention.
+- **Single Redirect URL** for TikTok Business and TikTok Shop.
+- **Automatic Authorization Type Detection**.
+- **Power Automate Integration** using the same HTTP trigger.
+- Captures the authorization `code`.
+- Captures the `state` parameter.
+- No TikTok access tokens, refresh tokens, or app secrets are included in the HTML.
+- Simple request body for Power Automate.
+
+---
+
+## Power Automate Request Body
+
+The redirect page sends only three values:
+
+```json
+{
+  "type": "shop",
+  "code": "AUTHORIZATION_CODE",
+  "state": "STATE_VALUE"
+}
+```
+
+For TikTok Business:
+
+```json
+{
+  "type": "business",
+  "code": "AUTHORIZATION_CODE",
+  "state": "STATE_VALUE"
+}
+```
+
+For TikTok Shop:
+
+```json
+{
+  "type": "shop",
+  "code": "AUTHORIZATION_CODE",
+  "state": "STATE_VALUE"
+}
+```
+
+---
+
+## How Authorization Type Is Detected
+
+The redirect page checks for the TikTok Shop `app_key` parameter:
+
+```javascript
+const appKey = params.get("app_key");
+const type = appKey ? "shop" : "business";
+```
+
+Therefore:
+
+### Business callback
+
+```text
+?auth_code=example&code=example&state=example
+```
+
+Results in:
+
+```text
+type = business
+```
+
+### Shop callback
+
+```text
+?app_key=6la75j8ggs28c&code=example&locale=en&shop_region=PH&state=example
+```
+
+Results in:
+
+```text
+type = shop
+```
+
+The `locale` and `shop_region` values are not sent to Power Automate because the current requirement is to send only `type`, `code`, and `state`.
+
+---
+
+## Authorization Code Handling
+
+The page supports both callback formats by checking:
+
+```javascript
+const authCode = params.get("auth_code") || params.get("code");
+```
+
+This keeps the existing TikTok Business behavior while also supporting the TikTok Shop callback.
+
+The value is then sent to Power Automate as:
+
+```json
+"code": "AUTHORIZATION_CODE"
+```
 
 ---
 
 ## How to Use
 
-1. **Clone or download** this repository.  
-2. Replace the placeholder `YOUR_FLOW_HTTP_TRIGGER_URL` in `tiktok_redirect.html` with your **Power Automate HTTP Request URL**.
-3. Push the file to your GitHub repository.  
-4. Enable **GitHub Pages** in repository settings → select branch (`main`) and folder (`/root`).  
-5. Copy the **GitHub Pages URL**, for example: https://<your-github-username>.github.io/tiktok-oauth-redirect/tiktok_redirect.html
-6. Set this URL as the **Redirect URI** in your TikTok Developer App.  
-7. Generate TikTok authorization URL and send it to your user:
-https://business-api.tiktok.com/portal/auth
-?
-app_id=YOUR_APP_ID
-&redirect_uri=https://<your-github-username>.github.io/tiktok-oauth-redirect/tiktok_redirect.html
-&state=RANDOM_STRING
-&scope=ads.management,ads.insights
-8. User clicks link → TikTok login → redirects to GitHub page → page sends auth code to Power Automate → flow exchanges auth code for access token.  
+1. Push `tiktok_redirect.html` to the existing GitHub repository.
+2. Keep the same GitHub Pages URL:
+
+```text
+https://awi-systems.github.io/tiktok-oauth-redirect/tiktok_redirect.html
+```
+
+3. Use the same redirect URL for the TikTok Business and TikTok Shop authorization flows where the respective TikTok configuration accepts the shared redirect URL.
+4. In Power Automate, configure the HTTP trigger to accept:
+
+```json
+{
+  "type": "string",
+  "code": "string",
+  "state": "string"
+}
+```
+
+5. Add a Condition in Power Automate using `type`:
+
+```text
+type is equal to shop
+```
+
+6. If **Yes**, continue with TikTok Shop processing.
+7. If **No**, continue with TikTok Business / Ads processing.
+
+---
+
+## Recommended Power Automate Flow
+
+```text
+TikTok Authorization
+        |
+        +-----------------------------+
+        |                             |
+ TikTok Business                 TikTok Shop
+        |                             |
+        +-------------+---------------+
+                      |
+                      v
+             GitHub Redirect Page
+                      |
+                      v
+               Power Automate
+                      |
+                      v
+                 Check type
+                  /       \
+               shop      business
+                |            |
+                v            v
+          Shop Processing  Business Processing
+```
+
+---
+
+## Power Automate Condition
+
+Use the `type` property received from the redirect page:
+
+```text
+type is equal to shop
+```
+
+### If Yes
+
+Process the authorization as **TikTok Shop**.
+
+### If No
+
+Process the authorization as **TikTok Business / Ads**.
+
+This keeps both integrations in one Power Automate trigger while allowing each authorization flow to have its own processing logic.
 
 ---
 
 ## Security Notes
 
-- **No secrets in HTML**: Safe to host publicly.  
-- **HTTPS required**: GitHub Pages provides HTTPS by default.  
-- **State parameter**: Ensure your flow validates the `state` parameter to prevent CSRF attacks.  
-- **Access token handling**: All sensitive operations, including exchanging the auth code for an access token, happen inside your Power Automate flow or backend.  
+- **No secrets in HTML**: The page does not contain TikTok app secrets, access tokens, or refresh tokens.
+- **HTTPS required**: GitHub Pages provides HTTPS by default.
+- **State validation**: Validate the `state` value inside Power Automate/backend when it is used to protect the authorization flow.
+- **Access token handling**: Token exchange and token storage should happen inside Power Automate/backend, not in the public HTML page.
+- **Power Automate URL**: The HTTP trigger URL is embedded in the public HTML. Treat it as a sensitive endpoint and rotate/revoke it if it becomes exposed or compromised.
+
+---
+
+## Example Flow
+
+```text
+Email / System
+      |
+      v
+TikTok Authorization URL
+      |
+      v
+TikTok Login / Authorization
+      |
+      v
+GitHub Redirect Page
+      |
+      +---- app_key exists? ----+
+      |                         |
+     YES                       NO
+      |                         |
+ type = shop              type = business
+      |                         |
+      +-----------+-------------+
+                  |
+                  v
+          Power Automate
+                  |
+                  v
+             Process OAuth
+                  |
+                  v
+        Exchange Code / Token
+                  |
+                  v
+          Continue API Access
+```
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.  
-
----
-
-## Example Flow Diagram
-Email → TikTok Auth URL → TikTok Login → Redirect Page → Power Automate → Exchange Auth Code → Store Access Token → Fetch Ads Insights
+This project is licensed under the MIT License.

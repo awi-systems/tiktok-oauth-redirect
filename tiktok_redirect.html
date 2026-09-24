@@ -11,22 +11,40 @@
   // -----------------------------
   // Configuration
   // -----------------------------
-  const POWER_AUTOMATE_URL = "https://default8b9960bd61b9466580873fd16438c4.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/efec1f6b73e94552a2508307a999859b/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=FuxQUwqHRXhtpgThiTAiLhtYgLcZob5RapYwaDkDEN0";
+  const POWER_AUTOMATE_URL = "https://default8b9960bd61b9466580873fd16438c4.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/efec1f6b73e94552a2508307a999859b/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=FuxQUwqHRhtpgThiTAiLhtYgLcZob5RapYwaDkDEN0";
 
   // -----------------------------
   // Capture query parameters
   // -----------------------------
   const params = new URLSearchParams(window.location.search);
-  const authCode = params.get("code");   // TikTok auth code
-  const state = params.get("state");     // State returned by TikTok
 
+  // TikTok Business / Ads and TikTok Shop both use "code"
+  // TikTok Business may also return "auth_code"
+  const authCode = params.get("auth_code") || params.get("code");
+  const state = params.get("state");
+
+  // TikTok Shop callback contains app_key
+  const appKey = params.get("app_key");
+
+  // -----------------------------
+  // Identify authorization type
+  // -----------------------------
+  // Shop callback: app_key is present
+  // Business callback: app_key is not present
+  const type = appKey ? "shop" : "business";
+
+  // -----------------------------
+  // Validate authorization code
+  // -----------------------------
   if (!authCode) {
-    document.body.innerHTML = "<p style='color:red;'>No auth code found. Please try again.</p>";
+    document.body.innerHTML =
+      "<p style='color:red;'>No auth code found. Please try again.</p>";
   } else {
-    document.body.innerHTML = "<p>Authorization successful! You can close this page.</p>";
+    document.body.innerHTML =
+      "<p>Authorization successful! You can close this page.</p>";
 
     // -----------------------------
-    // Send auth code and state to Power Automate
+    // Send authorization data to Power Automate
     // -----------------------------
     fetch(POWER_AUTOMATE_URL, {
       method: "POST",
@@ -34,12 +52,17 @@
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        type: type,
         code: authCode,
         state: state
       })
     })
-    .then(response => console.log("Auth code sent to Power Automate", response))
-    .catch(error => console.error("Error sending auth code:", error));
+    .then(response =>
+      console.log("TikTok authorization data sent to Power Automate", response)
+    )
+    .catch(error =>
+      console.error("Error sending TikTok authorization data:", error)
+    );
   }
 </script>
 
